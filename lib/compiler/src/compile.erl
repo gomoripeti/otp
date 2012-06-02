@@ -781,7 +781,7 @@ parse_module(St) ->
     Opts = St#compile.options,
     Cwd = ".",
     IncludePath = [Cwd, St#compile.dir|inc_paths(Opts)],
-    R =  epp:parse_file(St#compile.ifile, IncludePath, pre_defs(Opts)),
+    R =  epp:parse_file(St#compile.ifile, {1,1}, IncludePath, pre_defs(Opts)),
     case R of
 	{ok,Forms} ->
             Encoding = epp:read_encoding(St#compile.ifile),
