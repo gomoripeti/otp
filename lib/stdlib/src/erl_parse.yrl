@@ -870,21 +870,27 @@ normalise_list([]) ->
 abstract(T) ->
     abstract(T, 0, epp:default_encoding()).
 
-%%% abstract/2 takes line and encoding options
+%%% abstract/2 takes location and encoding options
 -spec abstract(Data, Options) -> AbsTerm when
       Data :: term(),
-      Options :: Line | [Option],
-      Option :: {line, Line} | {encoding, Encoding},
+      Options :: Line | Location | [Option],
+      Option :: {line, Line} | {location, Location} | {encoding, Encoding},
       Encoding :: latin1 | unicode | utf8,
+      Location :: erl_scan:location(),
       Line :: erl_scan:line(),
       AbsTerm :: abstract_expr().
 
 abstract(T, Line) when is_integer(Line) ->
     abstract(T, Line, epp:default_encoding());
+abstract(T, Loc) when is_tuple(Loc) ->
+    abstract(T, Loc, epp:default_encoding());
 abstract(T, Options) when is_list(Options) ->
-    Line = proplists:get_value(line, Options, 0),
+    Loc = case get_attribute(Options, location) of
+	      undefined -> 0;
+	      {location,Loc2} -> Loc2
+	  end,
     Encoding = proplists:get_value(encoding, Options,epp:default_encoding()),
-    abstract(T, Line, Encoding).
+    abstract(T, Loc, Encoding).
 
 -define(UNICODE(C),
          (C >= 0 andalso C < 16#D800 orelse
