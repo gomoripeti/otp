@@ -181,7 +181,8 @@ sign_verify() ->
      [{doc, "Sign/verify digital signatures"}].
 sign_verify(Config) when is_list(Config) ->
     SignVerify = proplists:get_value(sign_verify, Config),
-    lists:foreach(fun do_sign_verify/1, SignVerify).
+    lists:foreach(fun do_sign_verify/1, SignVerify),
+    lists:foreach(fun negative_sign/1, SignVerify).
 
 %%-------------------------------------------------------------------- 
 public_encrypt() ->
@@ -189,7 +190,8 @@ public_encrypt() ->
 public_encrypt(Config) when is_list(Config) ->
     Params = proplists:get_value(pub_priv_encrypt, Config),
     lists:foreach(fun do_public_encrypt/1, Params),
-    lists:foreach(fun do_private_encrypt/1, Params).
+    lists:foreach(fun do_private_encrypt/1, Params),
+    lists:foreach(fun negative_crypt/1, Params).
 
 %%--------------------------------------------------------------------
 generate_compute() ->
@@ -389,6 +391,11 @@ do_sign_verify({Type, Hash, Public, Private, Msg}) ->
 	    ct:fail({{crypto, verify, [Type, Hash, Msg, Signature, Public]}})
     end. 
 
+negative_sign({Type, none, _Public, [_|PrivateTail], Msg}) ->
+    check_error(badkey, sign, [Type, sha, {digest, Msg}, [-1|PrivateTail]]);
+negative_sign({Type, Hash, _Public, [_|PrivateTail], Msg}) ->
+    check_error(badkey, sign, [Type, Hash, {digest, crypto:hash(Hash, Msg)}, [-1|PrivateTail]]).
+
 negative_verify(Type, Hash, Msg, Signature, Public) ->
     case crypto:verify(Type, Hash, Msg, Signature, Public) of
 	true ->
@@ -410,13 +417,25 @@ do_private_encrypt({_Type, _Public, _Private, _Msg, rsa_pkcs1_oaep_padding}) ->
     ok; %% Not supported by openssl
 do_private_encrypt({Type, Public, Private, Msg, Padding}) ->
     PrivEcn = (catch crypto:private_encrypt(Type, Msg, Private, Padding)),
-    case crypto:public_decrypt(rsa, PrivEcn, Public, Padding) of
+    case crypto:public_decrypt(Type, PrivEcn, Public, Padding) of
 	Msg ->
 	    ok;
 	Other ->
 	    ct:fail({{crypto, public_decrypt, [Type, PrivEcn, Public, Padding]}, {expected, Msg}, {got, Other}})
     end.
-     
+
+negative_crypt({Type, [_, Mod|_] = Public, Private, _Msg, Padding}) ->
+    BinMod =
+        if is_binary(Mod) -> Mod;
+           true -> int_to_bin(Mod)
+        end,
+    TooBigSize = erlang:byte_size(BinMod) + 1,
+    TooBigMsg = <<$X:TooBigSize/unit:8>>,
+    check_error(encrypt_failed, public_encrypt, [Type, TooBigMsg, Public, Padding]),
+    check_error(decrypt_failed, private_decrypt, [Type, TooBigMsg, Private, Padding]),
+    check_error(encrypt_failed, private_encrypt, [Type, TooBigMsg, Private, Padding]),
+    check_error(decrypt_failed, public_decrypt, [Type, TooBigMsg, Public, Padding]).
+
 do_generate_compute({srp = Type, UserPrivate, UserGenParams, UserComParams,
 		     HostPublic, HostPrivate, HostGenParams, HostComParam, SessionKey}) ->
     {UserPublic, UserPrivate} = crypto:generate_key(Type, UserGenParams, UserPrivate),
@@ -439,6 +458,16 @@ do_compute({ecdh = Type, Pub, Priv, Curve, SharedSecret}) ->
 	 Other ->
 	     ct:fail({{crypto, compute_key, [Type, Pub, Priv, Curve]}, {expected, SharedSecret}, {got, Other}})
      end.
+
+check_error(Reason, Fun, Args) ->
+    case catch apply(crypto, Fun, Args) of
+        {'EXIT', {Reason, [{crypto, Fun, Args, _Loc}|_]}} ->
+            ok;
+        {'EXIT', {Reason, [ST|_]}} ->
+            ct:fail({{crypto, Fun, Args}, {bad_stacktrace, ST}});
+        Other ->
+            ct:fail({{crypto, Fun, Args}, should_fail, Other})
+    end.
 
 hexstr2bin(S) ->
     list_to_binary(hexstr2list(S)).
