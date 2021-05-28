@@ -483,12 +483,14 @@ get_trace_options([_|Opts]) ->
     get_trace_options(Opts).
 
 
-set_pattern_trace(Flag, Pattern) ->
+set_pattern_trace(Flag, Patterns) when is_list(Patterns) ->
     erlang:system_flag(multi_scheduling, block),
     erlang:trace_pattern(on_load, Flag, [call_time]),
-    erlang:trace_pattern(Pattern, Flag, [call_time]),
+    [erlang:trace_pattern(Pattern, Flag, [call_time]) || Pattern <- Patterns],
     erlang:system_flag(multi_scheduling, unblock),
-    ok.
+    ok;
+set_pattern_trace(Flag, Pattern) when is_tuple(Pattern) ->
+    set_pattern_trace(Flag, [Pattern]).
 
 set_process_trace(_, [], _) -> true;
 set_process_trace(Flag, [Pid|Pids], Options) when is_pid(Pid) ->
